@@ -1,0 +1,24 @@
+# 只填写客户端实际连接的公网信息；用户 UUID/密码由 sing-box config.json 自动读取。
+inbounds:
+  hy2-in:
+    server: ora.61008281.xyz
+    port: 9443
+    sni: ora.61008281.xyz
+    # sing-box 服务端配置中已有时可以省略；填写后会覆盖生成订阅中的对应字段。
+    obfs:
+      type: salamander
+      password: rrrrrr
+
+  vless-in:
+    server: ora.61008281.xyz
+    port: 443
+    sni: ora.61008281.xyz
+    # 可选：覆盖客户端传输参数
+    # transport:
+    #   type: ws
+    #   path: /ws
+
+  trojan-in:
+    server: ora.61008281.xyz
+    port: 8443
+    sni: ora.61008281.xyz

@@ -15,6 +15,13 @@
       <input class="input" v-model="nodeData.name" placeholder="jp-tokyo-1" />
     </Field>
 
+    <Field label="节点类型" hint="裸 sing-box 节点填写 Agent 地址；无需在 VPS 安装 2S-UI。">
+      <select class="input" v-model="nodeData.kind">
+        <option value="panel">2S-UI 节点</option>
+        <option value="bare-singbox">裸 sing-box + Agent</option>
+      </select>
+    </Field>
+
     <Field :label="$t('node.baseUrl')" :hint="$t('node.baseUrlHint')">
       <input class="input mono" v-model="nodeData.baseUrl" placeholder="https://1.2.3.4:2095" />
     </Field>

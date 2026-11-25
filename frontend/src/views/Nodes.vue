@@ -9,6 +9,7 @@
     :visible="importModal.visible"
     :node-id="importModal.nodeId"
     :node-name="importModal.nodeName"
+    :node-kind="importModal.nodeKind"
     @close="importModal.visible = false"
   />
 
@@ -103,7 +104,10 @@ const stateColor = (n: Node): string => {
   }
 }
 
-const displayUrl = (n: Node): string => n.baseUrl.replace(/^https?:\/\//, '')
+const displayUrl = (n: Node): string => {
+  const prefix = n.kind === 'bare-singbox' ? '裸 sing-box · ' : ''
+  return prefix + n.baseUrl.replace(/^https?:\/\//, '')
+}
 
 // ---------------- relative time ----------------
 const relTime = (unix: number): string => {
@@ -169,9 +173,9 @@ const openDrawer = (id: number) => {
 }
 
 // ---------------- import inbounds ----------------
-const importModal = ref({ visible: false, nodeId: 0, nodeName: '' })
+const importModal = ref({ visible: false, nodeId: 0, nodeName: '', nodeKind: 'panel' as Node['kind'] })
 const openImport = (n: Node) => {
-  importModal.value = { visible: true, nodeId: n.id, nodeName: n.name }
+  importModal.value = { visible: true, nodeId: n.id, nodeName: n.name, nodeKind: n.kind }
 }
 
 // ---------------- reconcile ----------------

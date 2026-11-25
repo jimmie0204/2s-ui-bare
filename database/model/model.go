@@ -180,9 +180,12 @@ type Tokens struct {
 // header). Only connection config and the last observed transition live in
 // the DB — live status is kept in an in-memory snapshot (service/node.go).
 type Node struct {
-	Id       uint   `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
-	Enable   bool   `json:"enable" form:"enable" gorm:"default:true;not null"`
-	Name     string `json:"name" form:"name" gorm:"unique"`
+	Id     uint   `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
+	Enable bool   `json:"enable" form:"enable" gorm:"default:true;not null"`
+	Name   string `json:"name" form:"name" gorm:"unique"`
+	// Kind 区分远程 2S-UI 面板和裸 sing-box Agent。
+	// 当前两者使用同一套节点 API，显式保存类型便于界面展示和后续适配器扩展。
+	Kind     string `json:"kind" form:"kind" gorm:"default:panel;not null"`
 	BaseUrl  string `json:"baseUrl" form:"baseUrl"` // scheme://host[:port], no path
 	WebPath  string `json:"webPath" form:"webPath"` // remote panel web path, default "/app/"
 	Token    string `json:"token,omitempty" form:"token"`

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -1101,6 +1102,31 @@ func (a *ApiService) GetNodeInbounds(c *gin.Context) {
 	}
 	inbounds, err := a.NodeSyncService.FetchNodeInbounds(uint(id))
 	jsonObj(c, inbounds, err)
+}
+
+func (a *ApiService) ImportBareConfig(c *gin.Context, loginUser string) {
+	id, err := strconv.ParseUint(c.PostForm("id"), 10, 64)
+	if err != nil {
+		jsonMsg(c, "importBareConfig", common.NewError("invalid node id"))
+		return
+	}
+	file, _, err := c.Request.FormFile("config")
+	if err != nil {
+		jsonMsg(c, "importBareConfig", common.NewError("config file is required"))
+		return
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, service.MaxBareConfigSize()))
+	if err != nil {
+		jsonMsg(c, "importBareConfig", err)
+		return
+	}
+	if int64(len(raw)) >= service.MaxBareConfigSize() {
+		jsonMsg(c, "importBareConfig", common.NewError("config file exceeds 32 MiB"))
+		return
+	}
+	result, err := service.ImportBareSingBoxConfig(uint(id), raw, loginUser)
+	jsonObj(c, result, err)
 }
 
 func (a *ApiService) AdoptInbounds(c *gin.Context, loginUser string) {

@@ -28,6 +28,10 @@
       </div>
     </div>
     <template #footer>
+      <input ref="configFile" type="file" accept=".json,application/json" style="display: none" @change="importBareConfig" />
+      <Btn v-if="nodeKind === 'bare-singbox'" :loading="importingFile" @click="configFile?.click()">
+        <Ico name="upload" :size="15" /> 导入裸 sing-box 配置
+      </Btn>
       <Btn @click="$emit('close')">{{ $t('actions.cancel') }}</Btn>
       <Btn variant="primary" :loading="importing" :disabled="selected.size === 0 || (assignable && initUsersIncomplete(initUsers))" @click="doImport">
         <Ico name="download" :size="15" /> {{ $t('node.import') }}
@@ -53,6 +57,7 @@ const props = defineProps<{
   visible: boolean
   nodeId: number
   nodeName: string
+  nodeKind: 'panel' | 'bare-singbox'
 }>()
 const emit = defineEmits<{ close: [] }>()
 
@@ -65,6 +70,8 @@ const inbounds = ref<RemoteInbound[]>([])
 const selected = ref<Set<string>>(new Set())
 const loading = ref(false)
 const importing = ref(false)
+const importingFile = ref(false)
+const configFile = ref<HTMLInputElement | null>(null)
 // The same clients picker the inbound drawer shows for a new inbound, over the
 // same bindable clients, resolved to ids the same way.
 const initUsers = ref<InitUsers>({ model: 'none', values: [] })
@@ -88,6 +95,23 @@ const load = async () => {
   const msg = await HttpUtils.get('api/nodeInbounds', { id: props.nodeId })
   loading.value = false
   if (msg.success) inbounds.value = msg.obj ?? []
+}
+
+const importBareConfig = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  importingFile.value = true
+  const form = new FormData()
+  form.append('id', String(props.nodeId))
+  form.append('config', file)
+  const msg = await HttpUtils.post('api/importBareConfig', form)
+  importingFile.value = false
+  if (msg.success) {
+    Data().loadData(true)
+    emit('close')
+  }
 }
 
 const doImport = async () => {

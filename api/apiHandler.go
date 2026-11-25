@@ -55,6 +55,8 @@ func (a *APIHandler) postHandler(c *gin.Context) {
 		a.ApiService.Save(c, loginUser, true, hostname)
 	case "adoptInbounds":
 		a.ApiService.AdoptInbounds(c, loginUser)
+	case "importBareConfig":
+		a.ApiService.ImportBareConfig(c, loginUser)
 	case "reconcileNode":
 		a.ApiService.ReconcileNode(c)
 	case "restartApp":

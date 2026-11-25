@@ -1,0 +1,20 @@
+[Unit]
+Description=Sing-box bare-node management agent
+After=network-online.target sing-box.service
+Wants=network-online.target
+PartOf=sing-box.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/singbox-agent
+ExecStart=/usr/local/bin/singbox-agent
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/etc/sing-box /var/lib/singbox-agent
+
+[Install]
+WantedBy=multi-user.target

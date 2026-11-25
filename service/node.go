@@ -465,10 +465,15 @@ func (s *NodeService) GetAll() ([]map[string]interface{}, error) {
 	}
 	out := make([]map[string]interface{}, 0, len(nodes))
 	for _, n := range nodes {
+		kind := n.Kind
+		if kind == "" {
+			kind = "panel"
+		}
 		out = append(out, map[string]interface{}{
 			"id":       n.Id,
 			"enable":   n.Enable,
 			"name":     n.Name,
+			"kind":     kind,
 			"baseUrl":  n.BaseUrl,
 			"webPath":  n.WebPath,
 			"insecure": n.Insecure,
@@ -520,6 +525,12 @@ func (s *NodeService) Save(tx *gorm.DB, act string, data json.RawMessage) error 
 		}
 		node.WebPath = normalizeWebPath(node.WebPath)
 		node.CertPin = normalizeCertPin(node.CertPin)
+		if node.Kind == "" {
+			node.Kind = "panel"
+		}
+		if node.Kind != "panel" && node.Kind != "bare-singbox" {
+			return common.NewError("node kind must be panel or bare-singbox")
+		}
 		var oldName string
 		if act == "edit" {
 			if node.Id == 0 {

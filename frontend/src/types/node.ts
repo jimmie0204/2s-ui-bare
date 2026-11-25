@@ -6,6 +6,7 @@ export interface Node {
   id: number
   enable: boolean
   name: string
+  kind: 'panel' | 'bare-singbox'
   baseUrl: string
   webPath: string
   // Write-only: the server never echoes the token back, it reports tokenSet.
@@ -38,6 +39,7 @@ export const defaultNode: Node = {
   id: 0,
   enable: true,
   name: '',
+  kind: 'panel',
   baseUrl: '',
   webPath: '/app/',
   token: '',
