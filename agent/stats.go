@@ -32,13 +32,22 @@ func (a *Agent) readUserTraffic(ctx context.Context) (map[string]userTraffic, er
 		return nil, fmt.Errorf("connect sing-box v2ray_api: %w", err)
 	}
 	defer conn.Close()
-	stats, err := v2rayapi.NewStatsServiceClient(conn).QueryStats(ctx, &v2rayapi.QueryStatsRequest{
+	request := &v2rayapi.QueryStatsRequest{
 		Patterns: []string{"^user>>>.+>>>traffic>>>(uplink|downlink)$"},
 		Regexp:   true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("query sing-box user stats: %w", err)
 	}
+	var response v2rayapi.QueryStatsResponse
+	// sing-box 1.14.4 将服务名改为 v2ray.core.app.stats.command.StatsService；
+	// 先调用新名称，失败后兼容旧版本的 experimental.v2rayapi 服务名。
+	err = conn.Invoke(ctx, "/v2ray.core.app.stats.command.StatsService/QueryStats", request, &response)
+	if err != nil {
+		stats, legacyErr := v2rayapi.NewStatsServiceClient(conn).QueryStats(ctx, request)
+		if legacyErr != nil {
+			return nil, fmt.Errorf("query sing-box user stats: %w", err)
+		}
+		response = *stats
+	}
+	stats := &response
 	for _, item := range stats.Stat {
 		match := userStatName.FindStringSubmatch(item.GetName())
 		if len(match) != 3 {

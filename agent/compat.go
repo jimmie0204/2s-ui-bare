@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -35,12 +38,47 @@ type compatClient struct {
 	LimitIP  int             `json:"limitIp"`
 }
 
+// coreVersion 探测 sing-box 真实版本号，60 秒缓存避免每次探测都拉起子进程。
+var (
+	coreVersionOnce sync.Mutex
+	coreVersionCache string
+	coreVersionAt   time.Time
+)
+
+func (a *Agent) coreVersion() string {
+	coreVersionOnce.Lock()
+	defer coreVersionOnce.Unlock()
+	if a.opts.BinaryPath == "" {
+		return "unknown"
+	}
+	if coreVersionCache != "" && time.Since(coreVersionAt) < 60*time.Second {
+		return coreVersionCache
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, a.opts.BinaryPath, "version").Output()
+	version := "unknown"
+	if err == nil {
+		// 输出首行形如 "sing-box version 1.14.2"。
+		if line := strings.TrimSpace(string(out)); line != "" {
+			if idx := strings.IndexByte(line, '\n'); idx >= 0 {
+				line = line[:idx]
+			}
+			if fields := strings.Fields(line); len(fields) >= 3 {
+				version = strings.Join(fields[2:], " ")
+			}
+		}
+	}
+	coreVersionCache, coreVersionAt = version, time.Now()
+	return version
+}
+
 func (a *Agent) compatStatus(w http.ResponseWriter, _ *http.Request) {
 	writeCompat(w, http.StatusOK, map[string]any{
 		"cpu": 0,
 		"mem": map[string]any{"current": 0, "total": 0},
 		"sys": map[string]any{"appVersion": "singbox-agent"},
-		"sbd": map[string]any{"running": a.coreRunning(), "version": "unknown"},
+		"sbd": map[string]any{"running": a.coreRunning(), "version": a.coreVersion()},
 	})
 }
 
@@ -139,7 +177,36 @@ func (a *Agent) compatSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var payload map[string]any
-	if err := json.Unmarshal([]byte(r.FormValue("data")), &payload); err != nil {
+	if r.FormValue("action") == "del" {
+		// 原生 2S-UI 的删除请求 data 是节点本地客户端 ID，而不是对象。
+		id, err := strconv.ParseUint(strings.TrimSpace(r.FormValue("data")), 10, 32)
+		if err != nil {
+			writeCompatError(w, http.StatusBadRequest, fmt.Errorf("invalid client id: %w", err))
+			return
+		}
+		config, err := a.readConfig()
+		if err != nil {
+			writeCompatError(w, http.StatusInternalServerError, err)
+			return
+		}
+		inbounds, err := parseCompatInbounds(config)
+		if err != nil {
+			writeCompatError(w, http.StatusInternalServerError, err)
+			return
+		}
+		traffic, _ := a.readUserTrafficWithTimeout()
+		for _, client := range collectCompatClients(inbounds, traffic) {
+			if client.ID == uint(id) {
+				payload = map[string]any{"name": client.Name}
+				break
+			}
+		}
+		if payload == nil {
+			// 已不存在的客户端视为删除成功，保证同步幂等。
+			writeCompat(w, http.StatusOK, map[string]any{"saved": true})
+			return
+		}
+	} else if err := json.Unmarshal([]byte(r.FormValue("data")), &payload); err != nil {
 		writeCompatError(w, http.StatusBadRequest, fmt.Errorf("invalid client payload: %w", err))
 		return
 	}
@@ -233,9 +300,16 @@ func collectCompatClients(inbounds []compatInbound, traffic map[string]userTraff
 			client.Config = encoded
 		}
 	}
-	result := make([]compatClient, 0, len(byName))
-	for _, client := range byName {
-		result = append(result, *client)
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	result := make([]compatClient, 0, len(names))
+	for index, name := range names {
+		client := *byName[name]
+		client.ID = uint(index + 1)
+		result = append(result, client)
 	}
 	return result
 }

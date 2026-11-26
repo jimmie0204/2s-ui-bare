@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -71,7 +72,13 @@ func (a *Agent) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const prefix = "Bearer "
 		value := strings.TrimSpace(r.Header.Get("Authorization"))
-		if !strings.HasPrefix(value, prefix) || subtle.ConstantTimeCompare([]byte(strings.TrimSpace(strings.TrimPrefix(value, prefix))), a.token) != 1 {
+		ok := strings.HasPrefix(value, prefix) && subtle.ConstantTimeCompare([]byte(strings.TrimSpace(strings.TrimPrefix(value, prefix))), a.token) == 1
+		if !ok {
+			// 兼容中心面板 NodeService 使用的 Token 请求头（原生 2S-UI apiv2 认证方式）。
+			token := strings.TrimSpace(r.Header.Get("Token"))
+			ok = token != "" && subtle.ConstantTimeCompare([]byte(token), a.token) == 1
+		}
+		if !ok {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -96,7 +103,7 @@ func (a *Agent) health(w http.ResponseWriter, _ *http.Request) {
 		"ok":    true,
 		"agent": "singbox-agent",
 		"time":  time.Now().Unix(),
-		"core":  map[string]any{"running": a.coreRunning()},
+		"core":  map[string]any{"running": a.coreRunning(), "version": a.coreVersion()},
 	}
 	writeJSON(w, http.StatusOK, result)
 }
@@ -260,6 +267,12 @@ func (a *Agent) atomicWrite(config []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read current config: %w", err)
 	}
+	// 原子替换会让临时文件的 root 所有权覆盖原配置所有权；
+	// 保留原文件的权限和属主，确保 sing-box 用户仍可读取配置。
+	oldInfo, err := os.Stat(a.opts.ConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("stat current config: %w", err)
+	}
 	dir := filepath.Dir(a.opts.ConfigPath)
 	file, err := os.CreateTemp(dir, ".singbox-agent-*.json")
 	if err != nil {
@@ -267,7 +280,11 @@ func (a *Agent) atomicWrite(config []byte) ([]byte, error) {
 	}
 	name := file.Name()
 	defer os.Remove(name)
-	if err := file.Chmod(0600); err != nil {
+	if err := file.Chmod(oldInfo.Mode().Perm()); err != nil {
+		file.Close()
+		return nil, err
+	}
+	if err := file.Chown(int(oldInfo.Sys().(*syscall.Stat_t).Uid), int(oldInfo.Sys().(*syscall.Stat_t).Gid)); err != nil {
 		file.Close()
 		return nil, err
 	}

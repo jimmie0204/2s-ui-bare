@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -314,10 +315,12 @@ func (s *NodeSyncService) AdoptInbounds(nodeId uint, tags []string, initUsers st
 	err = db.Transaction(func(tx *gorm.DB) error {
 		dt := time.Now().Unix()
 		adopted := 0
+		importedClients := 0
 		var assignable []uint
 		for _, raw := range payload.Inbounds {
 			var meta struct {
-				Tag string `json:"tag"`
+				Tag  string `json:"tag"`
+				Type string `json:"type"`
 			}
 			if err := json.Unmarshal(raw, &meta); err != nil {
 				return err
@@ -343,12 +346,65 @@ func (s *NodeSyncService) AdoptInbounds(nodeId uint, tags []string, initUsers st
 			if takes[meta.Tag] {
 				assignable = append(assignable, replica.Id)
 			}
+
+			// 采纳裸节点入站时，同时把远程 users 导入中心客户端。
+			// 这是迁移已有裸 sing-box 节点时的关键步骤；同名客户端只更新
+			// 对应协议配置并补充入站绑定，不重复创建。
+			var full map[string]any
+			if err := json.Unmarshal(raw, &full); err != nil {
+				return err
+			}
+			users, _ := full["users"].([]any)
+			for _, value := range users {
+				user, ok := value.(map[string]any)
+				if !ok {
+					continue
+				}
+				name := strings.TrimSpace(util.AsString(user["name"]))
+				if name == "" {
+					continue
+				}
+				var clientModel model.Client
+				result := tx.Where("name = ?", name).First(&clientModel)
+				if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+					clientModel = model.Client{
+						Name: name, Enable: true, Group: "@cluster",
+						Config: json.RawMessage(`{}`), Inbounds: json.RawMessage(`[]`), Links: json.RawMessage(`[]`),
+					}
+				} else if result.Error != nil {
+					return result.Error
+				}
+				config := map[string]any{}
+				if len(clientModel.Config) > 0 {
+					_ = json.Unmarshal(clientModel.Config, &config)
+				}
+				user["name"] = name
+				config[meta.Type] = user
+				clientModel.Config, _ = json.Marshal(config)
+				inboundIDs := []uint{}
+				if len(clientModel.Inbounds) > 0 {
+					_ = json.Unmarshal(clientModel.Inbounds, &inboundIDs)
+				}
+				if !containsUint(inboundIDs, replica.Id) {
+					inboundIDs = append(inboundIDs, replica.Id)
+				}
+				clientModel.Inbounds, _ = json.Marshal(inboundIDs)
+				clientModel.Group = "@cluster"
+				if clientModel.Id == 0 {
+					if err := tx.Create(&clientModel).Error; err != nil {
+						return err
+					}
+					importedClients++
+				} else if err := tx.Save(&clientModel).Error; err != nil {
+					return err
+				}
+			}
 			adopted++
 		}
 		if adopted == 0 {
 			return common.NewError("no matching inbounds found on the node")
 		}
-		obj := map[string]interface{}{"nodeId": nodeId, "tags": tags}
+		obj := map[string]interface{}{"nodeId": nodeId, "tags": tags, "importedClients": importedClients}
 		if len(clientIds) > 0 {
 			// Clients were asked for, so binding nobody is a failure, not an
 			// import-only success: the caller would otherwise believe access
@@ -411,6 +467,24 @@ func buildReplicaInbound(raw json.RawMessage, nodeId uint) (*model.Inbound, erro
 	}
 	if outJson, ok := full["out_json"]; ok && outJson != nil {
 		inb.OutJson, _ = json.MarshalIndent(outJson, "", "  ")
+	} else if addresses, ok := full["addrs"].([]interface{}); ok && len(addresses) > 0 {
+		// 裸 Agent 没有原生 2S-UI 的 out_json 字段，公网地址位于 addrs。
+		// 将首个地址作为链接生成快照，并合并入站 TLS 参数，避免订阅链接为空。
+		if address, ok := addresses[0].(map[string]interface{}); ok {
+			fallback := cloneJSONMap(address)
+			if inboundTLS, ok := full["tls"].(map[string]interface{}); ok {
+				if addressTLS, ok := fallback["tls"].(map[string]interface{}); ok {
+					mergedTLS := cloneJSONMap(inboundTLS)
+					for key, value := range addressTLS {
+						mergedTLS[key] = value
+					}
+					fallback["tls"] = mergedTLS
+				} else {
+					fallback["tls"] = inboundTLS
+				}
+			}
+			inb.OutJson, _ = json.MarshalIndent(fallback, "", "  ")
+		}
 	}
 	// The node's own switch. A node too old to have one sends nothing, and its
 	// inbounds all run. Taken out of the options either way, which the panel
@@ -493,6 +567,33 @@ func (s *NodeSyncService) runReconcile(nodeId uint, startGen uint64) error {
 	}
 	client := nodePushClient(node)
 	defer closeIdle(client)
+
+	// 裸节点首次接入时先执行 bootstrap：把远程入站和 users 导入中心，
+	// 再计算期望状态。否则中心库为空时，普通 reconcile 会把远程用户
+	// 误判为多余用户并删除。
+	if node.Kind == "bare-singbox" {
+		var replicaCount int64
+		if err := database.GetDB().Model(model.Inbound{}).Where("node_id = ?", nodeId).Count(&replicaCount).Error; err != nil {
+			return err
+		}
+		if replicaCount == 0 {
+			remote, fetchErr := s.FetchNodeInbounds(nodeId)
+			if fetchErr != nil {
+				return fetchErr
+			}
+			tags := make([]string, 0, len(remote))
+			for _, inbound := range remote {
+				if !inbound.Adopted {
+					tags = append(tags, inbound.Tag)
+				}
+			}
+			if len(tags) > 0 {
+				if err := s.AdoptInbounds(nodeId, tags, "", "system-bootstrap"); err != nil {
+					return common.NewError("bare node bootstrap failed: "+err.Error())
+				}
+			}
+		}
+	}
 
 	// tag -> node-local inbound id
 	tagToId, err := s.nodeInboundTagMap(node, client)
