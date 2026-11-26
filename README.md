@@ -1,451 +1,849 @@
-# <img src="frontend/public/assets/favicon.svg" width="44" height="44" align="texttop" alt=""> 2S-UI
-[English](README.md) · [فارسی](README.fa.md) · [Tiếng Việt](README.vi.md) · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md)
+# 2S-UI 二开版部署与使用说明
 
-2S-UI is an open-source management panel for [sing-box](https://github.com/SagerNet/sing-box). It gives you a clean, multilingual interface for deploying, configuring and monitoring a wide range of proxy and VPN protocols — from a single VPS to a multi-node deployment.
+本文档说明当前二开版 2S-UI 的安装、部署、节点接入和日常使用方式。
 
-2S-UI began as a fork of s-ui. The frontend is rewritten in full, with a range of features added on top to make the panel nicer to use.
+当前版本同时支持两种节点架构：
 
-![](https://img.shields.io/github/v/release/shenaba/2s-ui.svg)
-[![Docker Pulls](https://img.shields.io/docker/pulls/shenaba/2s-ui.svg)](https://hub.docker.com/r/shenaba/2s-ui)
-[![Go Report Card](https://goreportcard.com/badge/github.com/shenaba/2s-ui)](https://goreportcard.com/report/github.com/shenaba/2s-ui)
-[![Downloads](https://img.shields.io/github/downloads/shenaba/2s-ui/total.svg)](https://github.com/shenaba/2s-ui/releases)
-[![License](https://img.shields.io/badge/license-GPL%20V3-blue.svg?longCache=true)](https://www.gnu.org/licenses/gpl-3.0.en.html)
+1. **原生 2S-UI 节点**：VPS 上安装完整 2S-UI，由中心面板通过节点 API 管理。
+2. **裸 sing-box + singbox-agent 节点**：VPS 上只运行裸 sing-box 和轻量 Agent，不安装完整 2S-UI，由中心面板统一管理。
 
-> **Disclaimer:** This project is only for personal learning and communication, please do not use it for illegal purposes, please do not use it in a production environment
+两种节点可以在同一个中心面板中混合使用。
 
-<a href="https://nowpayments.io/donation/shenaba" target="_blank" rel="noreferrer noopener">
-  <img src="https://nowpayments.io/images/embeds/donation-button-white.svg" alt="Crypto donation button by NOWPayments">
-</a>
+> 本项目仅用于个人学习和技术交流。生产环境部署前，请自行完成安全审计、备份和权限隔离。
 
-## Features
+---
 
-- **Multi-protocol** — VLESS, VMess, Trojan, Shadowsocks, Hysteria2, TUIC,
-  AnyTLS and more, inbound and outbound, plus WireGuard, WARP and Tailscale
-  endpoints ([full list](#protocols)).
-- **Central TLS** — Reality, uTLS fingerprints, XTLS, and certificates
-  registered once then picked per inbound.
-- **Routing rules** — matching on domain, IP, port, protocol, process, user and
-  rule-set, combined with and/or, with a separate rule list for DNS.
-- **Client management** — traffic quota, expiry date, IP limit, live online
-  status, plus one-click share links, QR codes and subscriptions.
-- **Traffic statistics** — per inbound, per client and per outbound, with reset
-  controls.
-- **Subscriptions** — `link`, `json` and `clash` formats, usage and expiry
-  reported back to the client app, external links folded in.
-- **Multi-node cluster** — node health monitoring, users shared across nodes,
-  every node's servers merged into one subscription
-  ([details](#multi-node-cluster)).
-- **Automatic HTTPS** — Let's Encrypt issuance and renewal, plus an automatic
-  nginx reverse proxy ([details](#domains--certificates)).
-- **Notifications** — node, core, outbound, client, resource and login events
-  pushed to Telegram, a webhook or e-mail, plus a Telegram bot that runs the
-  panel from a phone ([details](#notifications--telegram-bot)).
-- **Login protection** — persistent failure rate limiting, TOTP two-factor
-  authentication, and every session retired on a credential change
-  ([details](#login-protection)).
-- **One-click updates** — in-place upgrades from the panel, checksum-verified.
-- **Rebuilt interface** — a from-scratch frontend, hand-built components, dark
-  and light themes, six languages including RTL.
+## 一、整体架构
 
-<details id="protocols">
-  <summary>Supported protocols</summary>
+### 1. 原生 2S-UI 多节点模式
 
-- General: Mixed, SOCKS, HTTP/HTTPS, Direct, Tun, Redirect, TProxy
-- V2Ray based: VLESS, VMess, Trojan, Shadowsocks (incl. `plugin` / `plugin_opts`)
-- Other protocols: ShadowTLS, Hysteria, Hysteria2, Naive¹, TUIC, AnyTLS, Snell²
-- Inbound only: Cloudflared, Mieru³
-- Outbound only: Tor, SSH, Bridge, Selector, URLTest
-- Endpoints: WireGuard, WARP, Tailscale, OpenConnect, OpenVPN — with a latency test per endpoint or for all at once
-- XTLS is supported, and Hysteria port hopping is available on the outbound form
-
-<sup>1</sup> Naive needs the cronet toolchain, which does not build everywhere: official Linux
-releases ship it on amd64, arm64, armv7 and 386 only. On armv6, armv5 and s390x a Naive
-outbound reports that the binary was built without it.
-
-<sup>2</sup> sing-box's Snell inbound speaks v5 and v6 while its outbound speaks v4 and v6, so
-only a v6 listener gets a generated client config; a v5 listener is for clients configured by
-hand (Surge).
-
-<sup>3</sup> Mieru is not a sing-box protocol, so it is left out of the sing-box JSON
-subscription (stock sing-box clients reject it); clients get it from the Clash subscription
-or a `mierus://` share link.
-
-</details>
-
-## Languages
-
-English · Farsi · Vietnamese · Chinese (Simplified) · Chinese (Traditional) · Russian
-
-## Supported platforms
-
-| Platform | Architecture | Status |
-|----------|--------------|---------|
-| Linux    | amd64, arm64, armv7, armv6, armv5, 386, s390x | ✅ Supported |
-| Windows  | amd64, 386, arm64 | ✅ Supported |
-| macOS    | amd64, arm64 | 🚧 Experimental |
-
-## Screenshots
-
-!["Main"](frontend/media/main.png)
-
-[Other UI Screenshots](frontend/screenshots.md)
-
-## API Documentation
-
-[API-Documentation Wiki](https://github.com/shenaba/2s-ui/wiki/API-Documentation)
-
-## Default Installation Information
-
-| | Default |
-| --- | --- |
-| Panel | port `2095`, path `/app/` |
-| Subscription | port `2096`, path `/sub/` |
-| User / password | `admin` / `admin` |
-
-## Install
-
-### Linux/macOS
-
-```sh
-bash <(curl -Ls https://raw.githubusercontent.com/shenaba/2s-ui/main/install.sh)
+```text
+                 ┌────────────────────────┐
+                 │      中心 2S-UI         │
+                 │ 用户、节点、订阅、统计   │
+                 └───────────┬────────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │              │              │
+      ┌───────▼───────┐ ┌────▼────────┐ ┌───▼────────┐
+      │ VPS 1          │ │ VPS 2       │ │ VPS 3      │
+      │ 2S-UI+sing-box │ │ 2S-UI+      │ │ 2S-UI+     │
+      │                 │ │ sing-box    │ │ sing-box   │
+      └─────────────────┘ └─────────────┘ └────────────┘
 ```
 
-The language follows `$LANG`, or pass `en`, `fa`, `ru`, `vi`, `zhcn` or
-`zhtw`:
+适合新部署、希望每台节点都具备完整本地面板的场景。
 
-```sh
-SUI_LANG=zhcn bash <(curl -Ls https://raw.githubusercontent.com/shenaba/2s-ui/main/install.sh)
+### 2. 裸 sing-box + Agent 模式
+
+```text
+                 ┌────────────────────────┐
+                 │      中心 2S-UI         │
+                 │ 用户、节点、订阅、统计   │
+                 └───────────┬────────────┘
+                             │ HTTPS/WireGuard/Tailscale
+              ┌──────────────┼──────────────┐
+              │              │              │
+      ┌───────▼────────┐ ┌───▼──────────┐ ┌─▼───────────┐
+      │ VPS 1           │ │ VPS 2        │ │ VPS 3       │
+      │ 裸 sing-box     │ │ 裸 sing-box  │ │ 裸 sing-box │
+      │ singbox-agent   │ │ Agent        │ │ Agent       │
+      └─────────────────┘ └──────────────┘ └─────────────┘
 ```
 
-### Alpine Linux
+Agent 是独立的 systemd 服务，不是 sing-box 子进程，负责：
 
-Alpine ships neither `bash` nor `curl`. Add them first; the installer then
-detects Alpine and sets the panel up as an OpenRC service:
+- 读取和解析裸 sing-box 配置；
+- 管理 VLESS、Trojan、Hysteria2 入站用户；
+- 校验和原子应用配置；
+- 重启 sing-box，失败时恢复旧配置；
+- 查询 sing-box 用户级流量统计；
+- 为中心面板提供兼容的 2S-UI API；
+- 提供订阅生成需要的公网地址和端口元数据。
 
-```sh
-apk add bash curl
-bash <(curl -Ls https://raw.githubusercontent.com/shenaba/2s-ui/main/install.sh)
+---
+
+## 二、目录说明
+
+```text
+2s-ui-bare/
+├── agent/                         # singbox-agent 源码和 systemd 文件
+│   ├── metadata.example.yaml      # 订阅公网元数据示例
+│   ├── singbox-agent.env.example  # Agent 环境变量示例
+│   └── singbox-agent.service      # Agent systemd 单元
+├── frontend/                      # Vue 前端
+├── service/                       # 中心端业务逻辑
+├── database/                      # 数据模型和数据库
+├── api/                           # 中心端 API
+├── build.sh                       # 前端和后端完整构建脚本
+└── README-NEW.md                  # 本部署说明
 ```
 
-### Windows
+---
 
-1. Download the latest Windows release from [GitHub Releases](https://github.com/shenaba/2s-ui/releases/latest)
-2. Extract the ZIP file
-3. Run `install-windows.bat` as Administrator
-4. Follow the installation wizard
-5. Access the panel at http://localhost:2095/app
+## 三、环境要求
 
-### Docker
+### 中心 2S-UI
 
-```shell
-mkdir 2s-ui && cd 2s-ui
-wget -q https://raw.githubusercontent.com/shenaba/2s-ui/main/docker-compose.yml
-docker compose up -d
-```
+建议运行在独立管理服务器上：
 
-<details>
-  <summary>Without compose, or building your own image</summary>
+- Linux amd64 或 arm64；
+- systemd；
+- Go 1.27 或项目要求的 Go 版本；
+- Node.js 和 npm，仅源码构建时需要；
+- 可访问各 VPS 的 Agent 或节点 API；
+- 建议使用 HTTPS；
+- 建议使用 WireGuard、Tailscale 或独立管理网连接节点。
 
-If Docker itself is not installed yet:
+### 裸节点 VPS
 
-```shell
-curl -fsSL https://get.docker.com | sh
-```
+- Linux + systemd；
+- 已安装 sing-box；
+- sing-box 配置位于 `/etc/sing-box/config.json`；
+- sing-box 二进制默认位于 `/usr/local/bin/sing-box`；
+- sing-box systemd 服务默认名为 `sing-box`；
+- Agent 与 sing-box 使用同一台 VPS，但使用独立 systemd 服务。
 
-Plain `docker run`:
+---
 
-```shell
-mkdir 2s-ui && cd 2s-ui
-docker run -itd --init \
-    -p 2095:2095 -p 2096:2096 -p 443:443 \
-    -v $PWD/db/:/app/db/ \
-    -v $PWD/cert/:/root/cert/ \
-    -v $PWD/acme.sh/:/root/.acme.sh/ \
-    --name s-ui --restart=unless-stopped \
-    ghcr.io/shenaba/2s-ui:latest
-```
+## 四、从源码构建中心面板
 
-Build your own image:
-
-```shell
-git clone https://github.com/shenaba/2s-ui
-docker build -t 2s-ui .
-```
-
-</details>
-
-<details>
-  <summary>A specific version, manual installation, uninstall</summary>
-
-**A specific version.** Add the version to the end of the installation command. e.g. `v1.5.5`:
-
-```sh
-VERSION=v1.5.5 && bash <(curl -Ls https://raw.githubusercontent.com/shenaba/2s-ui/$VERSION/install.sh) $VERSION
-```
-
-**Manual installation — Linux/macOS**
-
-1. Get the latest version of 2S-UI based on your OS/Architecture from GitHub: [https://github.com/shenaba/2s-ui/releases/latest](https://github.com/shenaba/2s-ui/releases/latest)
-2. **OPTIONAL** Get the latest version of `s-ui.sh` [https://raw.githubusercontent.com/shenaba/2s-ui/main/s-ui.sh](https://raw.githubusercontent.com/shenaba/2s-ui/main/s-ui.sh)
-3. **OPTIONAL** Copy `s-ui.sh` to `/usr/bin/s-ui` and run `chmod +x /usr/bin/s-ui`.
-4. Extract s-ui tar.gz file to a directory of your choice and navigate to the directory where you extracted the tar.gz file.
-5. Copy *.service files to /etc/systemd/system/ and run `systemctl daemon-reload`.
-6. Enable autostart and start 2S-UI service using `systemctl enable s-ui --now`
-7. Start sing-box service using `systemctl enable sing-box --now`
-
-**Manual installation — Windows**
-
-1. Get the latest Windows version from GitHub: [https://github.com/shenaba/2s-ui/releases/latest](https://github.com/shenaba/2s-ui/releases/latest)
-2. Download the appropriate Windows package (e.g., `s-ui-windows-amd64.zip`)
-3. Extract the ZIP file to a directory of your choice
-4. Run `install-windows.bat` as Administrator
-5. Follow the installation wizard
-6. Access the panel at http://localhost:2095/app
-
-**Uninstall — systemd**
-
-```sh
-sudo -i
-
-systemctl disable s-ui  --now
-
-rm -f /etc/systemd/system/sing-box.service
-systemctl daemon-reload
-
-rm -fr /usr/local/s-ui
-rm /usr/bin/s-ui
-```
-
-**Uninstall — OpenRC (Alpine)**
-
-```sh
-sudo -i
-
-rc-service s-ui stop
-rc-update del s-ui default
-rm -f /etc/init.d/s-ui
-
-rm -fr /usr/local/s-ui
-rm /usr/bin/s-ui
-```
-
-</details>
-
-### Upgrading
-
-New releases are flagged on the version pill in the sidebar — the check is
-client-side, so the panel host itself does not need to reach GitHub. On Linux
-(systemd or Docker) one click upgrades in place: the panel downloads the
-release, verifies it against the published `SHA256SUMS`, smoke-tests the new
-binary, then replaces it and restarts. No SSH.
-
-> A running `.exe` cannot replace itself, so on Windows the pill only links to
-> the release page. In Docker the new binary lives in the container's writable
-> layer: it survives `docker restart`, but recreating the container reverts to
-> the image's version — pull a new image to make it stick.
-
-## Multi-Node Cluster
-
-One panel can manage the others. Add a remote 2S-UI instance on the **Nodes**
-page with its address and an API token, and the master will:
-
-- **Monitor it** — a 5-second heartbeat reports each node as online, offline, or
-  core-stopped (panel reachable but sing-box down).
-- **Share users with it** — clients on the master that reference a node's
-  inbounds are pushed to that node and kept in sync, with each node's traffic
-  folded back into the master's counters. Sync is scoped to a `@cluster` group,
-  so a node's own local users are never touched.
-- **Fold its servers into one subscription** — a client's subscription link
-  carries the master's servers and every bound node's servers together.
-
-A node is just another 2S-UI instance talking over the v2 API (`Token` header):
-no agent to install, and the only node-side setup is creating that API token in
-its own panel, so existing panels can be adopted as they are. Inbounds adopted
-from a node become read-only replicas on the master — edit them on the node they
-belong to.
-
-<details>
-  <summary>Driving node sync from the API</summary>
-
-`POST <panel path>apiv2/save` (the panel path is `/app/` by default, so
-`/app/apiv2/save`) triggers the web UI's immediate node fanout only when the
-request carries `sync=true`; without it, client/inbound changes still converge
-through the hourly reconcile safety net.
-
-`save` answers with what the write did, not with the new panel state: the
-object, the action, and the ids of the rows it touched — plus the full client
-rows (generated `links` included) when the object is `clients` and the action is
-a single-row `new` or `edit`. Fetch anything else through the read endpoints, e.g.
-`apiv2/clients`.
-
-</details>
-
-## Domains & Certificates
-
-Everything TLS lives in the **Domains & Certificates** tab of Panel Settings.
-Panel and subscription service each pick their own domain, and the certificate
-paths follow the domain you select — no file paths to copy around.
-
-**🔐 Automatic certificates (ACME / Let's Encrypt) — recommended.** Enter a
-domain, add an email, and press issue: 2S-UI obtains and auto-renews a free
-Let's Encrypt certificate, and the panel becomes reachable at
-`https://<your-domain>:2095/app`. Requires TCP port **80** reachable from the
-internet (HTTP-01 challenge). ACME is Linux-only and is hidden on Windows.
-
-<details>
-  <summary>How issuance works, and the Docker port-80 caveat</summary>
-
-Issuance runs through **acme.sh**, which 2S-UI installs for you on first use
-(along with `socat`, needed for standalone validation) and renews
-automatically: the panel checks every hour and runs `acme.sh --cron` once a
-certificate is due, so renewal works even where no cron daemon runs (the Docker
-image has none) — there is nothing for you to schedule.
-
-The validation method defaults to **auto** — standalone when port 80 is free,
-otherwise it borrows the running nginx, provisioning a minimal `server_name`
-block under `/etc/nginx/conf.d` if one is missing. Pick **standalone** or
-**nginx** explicitly if you would rather decide. Renewals hot-reload the
-certificate; no restart needed.
-
-> To publish port 80 with Docker: uncomment the `80:80` line in
-> `docker-compose.yml`, or add `-p 80:80` to `docker run`. Certificates are
-> stored under `/root/cert/<domain>/` as `fullchain.pem` / `privkey.pem` and
-> survive restarts (the Docker volume above maps that path out). Keep the
-> `/root/.acme.sh` volume as well: it holds the acme.sh account and the renewal
-> records, and without it a recreated container cannot renew. If the
-> domain/port is misconfigured, 2S-UI falls back to HTTP.
-
-</details>
-
-<details>
-  <summary>Bring your own certificate</summary>
-
-Certificates you manage yourself — a Cloudflare origin CA, a corporate CA,
-certbot output — can be registered in the same tab. 2S-UI verifies the files are
-readable, that the key matches the certificate, and that the certificate really
-covers the domain; the domain then becomes selectable on the Interface and
-Subscription tabs like any other. Registered certificates are included in
-database backups.
-
-To issue one by hand with Certbot:
+进入项目目录：
 
 ```bash
-snap install core; snap refresh core
-snap install --classic certbot
-ln -s /snap/bin/certbot /usr/bin/certbot
-
-certbot certonly --standalone --register-unsafely-without-email --non-interactive --agree-tos -d <Your Domain Name>
+cd /Users/jimmie/codex-default-workspace/2s-ui-bare
 ```
 
-Then register the resulting `fullchain.pem` / `privkey.pem` under
-**Domains & Certificates**.
+完整构建：
 
-</details>
-
-<details>
-  <summary>Behind a reverse proxy</summary>
-
-Turn on **TLS terminated by a reverse proxy** and 2S-UI writes the vhost for
-you: `/etc/nginx/conf.d/s-ui-proxy-<domain>.conf`, pointed at the panel with the
-right forwarding headers, checked with `nginx -t`, reloaded, and rolled back
-with nginx's own error message if anything fails. The subscription server can
-sit behind the same proxy.
-
-</details>
-
-## Notifications & Telegram Bot
-
-Everything lives in the **Notifications** tab of Panel Settings. Turn it on,
-pick the events, and give it at least one channel:
-
-- **Telegram** — a bot token and one or more chat IDs, optionally through a
-  proxy or a self-hosted Bot API server.
-- **Webhook** — every event delivered to a URL of your own.
-- **E-mail** — plain SMTP.
-
-Each channel has its own queue, so one that hangs cannot hold up the others.
-The events: a node or the sing-box core going down or coming back, an outbound
-failing its probe URL, a client running out of traffic or nearing expiry, CPU
-or memory over a threshold, and logins — successful, failed and banned. The
-thresholds, and how many failed probes make a node count as down, are settings
-on the same tab; a condition that keeps repeating is reported once and then
-not again for 24 hours. A scheduled report (cron or `@daily`) summarises the
-panel, optionally with a database backup attached.
-
-**Telegram bot**, on the same tab, turns those chat IDs into admin chats that
-run the panel from a phone: `/status`, `/nodes`, `/clients` (those nearing a
-limit, or `/clients <name>` to search), `/online`, `/traffic` for the last 24
-hours, `/inbounds`, `/bans` and `/backup`. From a client card the operator can
-hand out the subscription or a single inbound's link, as text and as a QR
-code, and bind the client to a Telegram account by picking the contact. A
-bound client can then ask the bot for their own usage and links, in their own
-language, and is told directly when their subscription is about to run out —
-a different message from the operator's, with no panel hostname on it. Anyone
-else gets `/id` (their own Telegram ID, for the operator to bind) and nothing
-that says which panel is behind the bot.
-
-<img src="frontend/media/tgbot.jpg" width="360" alt="Telegram bot">
-
-## Login Protection
-
-Three things guard the login, all on by default:
-
-- **Rate limiting** — five failures within five minutes lock an identity out
-  for fifteen, counted against both the source IP and the username, so
-  spreading attempts across either buys no fresh budget. The state is in the
-  database, so a restart does not clear a lockout. The three numbers are on
-  the **Interface** tab of Panel Settings; `0` in any of them disables it.
-  Behind a reverse proxy the panel takes the client address from
-  `X-Forwarded-For` only when its reverse-proxy mode is on — otherwise every
-  attempt would be attributed to the proxy and share one budget.
-- **Two-factor authentication** — TOTP, compatible with any authenticator
-  app. Enable it from the shield icon on the **Admins** page. The secret is
-  stored only once a code from it has been verified, so an abandoned enrolment
-  cannot lock you out; if the authenticator itself is lost, `sui admin
-  -disable-2fa` on the host turns it off.
-- **Session invalidation** — changing a password or username retires every
-  session issued before it, including open WebSocket connections.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding
-conventions, testing, and the pull request process.
-
-<details>
-  <summary>Building and running from source</summary>
-
-```shell
-git clone https://github.com/shenaba/2s-ui
-cd 2s-ui
-./runSUI.sh
+```bash
+./build.sh
 ```
 
-`build.sh` builds the frontend, copies it into `web/html/` for `//go:embed`,
-and builds the binary with the required build tags; `runSUI.sh` runs it on top
-of that. Building by hand needs those same tags — see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+`build.sh` 会依次执行：
 
-</details>
+1. 安装前端依赖；
+2. 构建主面板前端；
+3. 构建订阅页面；
+4. 将前端文件复制到 `web/html`；
+5. 编译中心端二进制 `sui`。
 
-<details>
-  <summary>Environment variables</summary>
+如果只验证后端：
 
-| Variable       |                      Type                      | Default       |
-| -------------- | :--------------------------------------------: | :------------ |
-| SUI_LOG_LEVEL  | `"debug"` \| `"info"` \| `"warn"` \| `"error"` | `"info"`      |
-| SUI_DEBUG      |                   `boolean`                    | `false`       |
-| SUI_DB_FOLDER  |                    `string`                    | `"db"`        |
-| SUI_BIN_FOLDER |                    `string`                    | `"bin"`       |
+```bash
+go test ./agent ./service ./database/... ./api
+```
 
-`SUI_BIN_FOLDER` is only read while migrating a database from the old
-subprocess-based layout; sing-box is embedded in the binary and there is no
-`bin/` folder at runtime.
+如果单独构建前端：
 
-</details>
+```bash
+cd frontend
+npm install
+npm run build
+```
 
-## Special Thanks
+如果构建时出现 `vue-tsc: command not found`，说明前端依赖尚未安装，先执行：
 
-- [@alireza0](https://github.com/alireza0)
+```bash
+cd frontend
+npm install
+```
 
-## Stargazers over Time
-[![Star History Chart](https://api.star-history.com/svg?repos=shenaba/2s-ui&type=Date)](https://star-history.com/#shenaba/2s-ui&Date)
+---
+
+## 五、部署中心 2S-UI
+
+### 1. 准备目录和用户
+
+以下示例将中心面板安装到 `/usr/local/2s-ui`：
+
+```bash
+sudo useradd --system --home /usr/local/2s-ui --shell /usr/sbin/nologin sui || true
+sudo mkdir -p /usr/local/2s-ui
+sudo cp sui /usr/local/2s-ui/sui
+sudo chown -R sui:sui /usr/local/2s-ui
+sudo chmod 0755 /usr/local/2s-ui/sui
+```
+
+### 2. 创建 systemd 服务
+
+创建 `/etc/systemd/system/s-ui.service`：
+
+```ini
+[Unit]
+Description=2S-UI central management panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sui
+WorkingDirectory=/usr/local/2s-ui
+ExecStart=/usr/local/2s-ui/sui
+Restart=always
+RestartSec=5
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+```
+
+创建数据库目录并启动：
+
+```bash
+sudo mkdir -p /usr/local/2s-ui/db /usr/local/2s-ui/cert
+sudo chown -R sui:sui /usr/local/2s-ui
+sudo systemctl daemon-reload
+sudo systemctl enable --now s-ui
+sudo systemctl status s-ui
+```
+
+默认访问地址：
+
+```text
+http://中心服务器IP:2095/app/
+```
+
+默认登录信息：
+
+```text
+用户名：admin
+密码：admin
+```
+
+首次登录后必须立即修改密码，并启用 TOTP 二次验证。
+
+> 也可以继续使用项目原有的安装脚本、Docker 或发行版安装方式。二开功能已经包含在当前源码和构建产物中。
+
+---
+
+## 六、部署方式一：原生 2S-UI 节点
+
+### 1. 在 VPS 上安装完整 2S-UI
+
+按照原项目方式安装 2S-UI 和 sing-box。确认服务正常：
+
+```bash
+sudo systemctl enable --now s-ui
+sudo systemctl enable --now sing-box
+sudo systemctl status s-ui
+sudo systemctl status sing-box
+```
+
+### 2. 在中心面板添加节点
+
+进入：
+
+```text
+节点 → 添加节点
+```
+
+填写：
+
+- 节点名称；
+- 节点 API 地址；
+- 节点端口；
+- 节点访问令牌或认证信息；
+- 节点类型选择 `2S-UI 节点`。
+
+保存后执行节点测试，确认状态正常。
+
+### 3. 采用远程入站
+
+打开节点卡片的导入按钮，面板会读取远程 2S-UI 的入站列表。勾选需要纳入中心管理的入站，然后导入。
+
+导入后可以：
+
+- 将中心用户绑定到入站；
+- 将中心用户同步到节点；
+- 汇总节点流量；
+- 将节点地址合并到统一订阅。
+
+---
+
+## 七、部署方式二：裸 sing-box + singbox-agent
+
+### 1. 安装 sing-box
+
+确保 VPS 上已有裸 sing-box：
+
+```bash
+sudo install -m 0755 sing-box /usr/local/bin/sing-box
+sudo install -d -m 0750 /etc/sing-box
+```
+
+确认配置：
+
+```bash
+/usr/local/bin/sing-box check -c /etc/sing-box/config.json
+```
+
+确认 sing-box 服务：
+
+```bash
+sudo systemctl enable --now sing-box
+sudo systemctl status sing-box
+```
+
+### 2. 构建 Agent
+
+在项目目录执行：
+
+```bash
+cd agent
+go build -trimpath -o singbox-agent .
+```
+
+将二进制复制到 VPS：
+
+```bash
+sudo install -m 0755 singbox-agent /usr/local/bin/singbox-agent
+```
+
+### 3. 创建 Agent 认证 Token
+
+```bash
+sudo install -d -m 0750 /etc/singbox-agent
+openssl rand -hex 32 | sudo tee /etc/singbox-agent/token >/dev/null
+sudo chmod 0600 /etc/singbox-agent/token
+```
+
+读取 Token：
+
+```bash
+sudo cat /etc/singbox-agent/token
+```
+
+Token 只在安全环境中保存，不要提交到 Git，也不要发送到公共聊天群。
+
+### 4. 配置 Agent 环境变量
+
+创建 `/etc/default/singbox-agent`：
+
+```ini
+SINGBOX_AGENT_LISTEN=127.0.0.1:2088
+SINGBOX_CONFIG=/etc/sing-box/config.json
+SINGBOX_BINARY=/usr/local/bin/sing-box
+SINGBOX_SERVICE=sing-box
+SINGBOX_AGENT_TOKEN_FILE=/etc/singbox-agent/token
+SINGBOX_AGENT_METADATA=/etc/singbox-agent/metadata.yaml
+# 如果启用了用户流量统计，再填写：
+SINGBOX_V2RAY_API=127.0.0.1:10085
+```
+
+所有参数也可以通过命令行传入：
+
+```bash
+singbox-agent \
+  --listen 127.0.0.1:2088 \
+  --config /etc/sing-box/config.json \
+  --binary /usr/local/bin/sing-box \
+  --service sing-box \
+  --token-file /etc/singbox-agent/token \
+  --metadata /etc/singbox-agent/metadata.yaml \
+  --v2ray-api 127.0.0.1:10085
+```
+
+### 5. 安装 systemd 服务
+
+```bash
+sudo install -m 0644 singbox-agent.service /etc/systemd/system/singbox-agent.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now singbox-agent
+sudo systemctl status singbox-agent
+```
+
+检查健康状态：
+
+```bash
+TOKEN=$(sudo cat /etc/singbox-agent/token)
+curl -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:2088/v1/health
+```
+
+查看入站：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:2088/v1/inbounds
+```
+
+### 6. 配置管理网络
+
+默认 Agent 只监听：
+
+```text
+127.0.0.1:2088
+```
+
+如果中心面板位于其他服务器，不建议直接把 Agent 暴露到公网。推荐顺序：
+
+1. WireGuard 私网地址；
+2. Tailscale 私网地址；
+3. VPS 专用管理网；
+4. 最后才考虑公网访问，并配合防火墙、HTTPS、mTLS 和源 IP 白名单。
+
+例如使用 WireGuard 管理地址：
+
+```ini
+SINGBOX_AGENT_LISTEN=10.20.0.11:2088
+```
+
+同时只允许中心管理服务器访问该端口：
+
+```bash
+sudo ufw allow from 10.20.0.1 to any port 2088 proto tcp
+sudo ufw deny 2088/tcp
+```
+
+### 7. 在中心面板添加 Agent 节点
+
+进入：
+
+```text
+节点 → 添加节点
+```
+
+填写：
+
+- 节点名称；
+- Agent 管理地址，例如 `http://10.20.0.11:2088`；
+- Bearer Token；
+- 节点类型选择 `裸 sing-box + Agent`。
+
+保存后执行节点测试。
+
+---
+
+## 八、裸 sing-box 的订阅元数据
+
+sing-box 配置通常只能说明：
+
+```text
+监听地址 = 0.0.0.0
+监听端口 = 9443
+```
+
+它无法可靠推导：
+
+- 公网域名；
+- NAT 后的外部端口；
+- CDN 域名；
+- Nginx/Caddy 反代地址；
+- 实际客户端 SNI。
+
+因此 Agent 支持独立元数据文件：
+
+```text
+/etc/singbox-agent/metadata.yaml
+```
+
+复制示例：
+
+```bash
+sudo install -m 0640 agent/metadata.example.yaml \
+  /etc/singbox-agent/metadata.yaml
+```
+
+示例：
+
+```yaml
+inbounds:
+  hy2-in:
+    server: ora.61008281.xyz
+    port: 9443
+    sni: ora.61008281.xyz
+    obfs: salamander
+    obfs-password: rrrrrr
+
+  vless-in:
+    server: ora.61008281.xyz
+    port: 443
+    sni: ora.61008281.xyz
+
+  trojan-in:
+    server: ora.61008281.xyz
+    port: 8443
+    sni: ora.61008281.xyz
+```
+
+修改后重启 Agent：
+
+```bash
+sudo systemctl restart singbox-agent
+```
+
+元数据覆盖优先级：
+
+```text
+metadata.yaml
+    > sing-box config.json 可推导字段
+    > 自动探测字段
+    > 空值
+```
+
+注意：元数据文件不需要写用户 UUID 或密码，用户信息仍从 sing-box 配置读取。
+
+---
+
+## 九、启用用户级流量统计
+
+sing-box 配置中加入或合并：
+
+```json
+{
+  "experimental": {
+    "v2ray_api": {
+      "listen": "127.0.0.1:10085",
+      "stats": {
+        "enabled": true,
+        "users": []
+      }
+    }
+  }
+}
+```
+
+然后在 Agent 环境文件中设置：
+
+```ini
+SINGBOX_V2RAY_API=127.0.0.1:10085
+```
+
+重启：
+
+```bash
+sudo systemctl restart sing-box
+sudo systemctl restart singbox-agent
+```
+
+Agent 使用 sing-box 原生计数器：
+
+```text
+user>>>用户名>>>traffic>>>uplink
+user>>>用户名>>>traffic>>>downlink
+```
+
+当中心面板新增或修改用户时，Agent 会在启用 `v2ray_api.stats.enabled` 的前提下自动维护统计用户列表。
+
+不要将 `v2ray_api` 监听地址设置为公网地址。该接口应只监听 `127.0.0.1` 或受保护的管理网。
+
+---
+
+## 十、从裸 sing-box 配置迁移到中心面板
+
+二开版提供了“导入裸 sing-box 配置”功能。
+
+### 适用场景
+
+原 VPS 上已经存在：
+
+```text
+/etc/sing-box/config.json
+```
+
+现在希望改为由中心 2S-UI 管理，不想重新手工创建每个入站和用户。
+
+### 操作步骤
+
+1. 在中心面板创建目标节点；
+2. 如果 VPS 已经部署 Agent，节点类型选择 `裸 sing-box + Agent`；
+3. 打开节点卡片的导入按钮；
+4. 选择本地裸 sing-box 的 `config.json`；
+5. 点击“导入裸 sing-box 配置”；
+6. 等待导入完成；
+7. 检查入站、用户和绑定关系；
+8. 配置该节点的公网元数据；
+9. 执行节点同步或重新生成订阅。
+
+### 会导入的内容
+
+- `inbounds` 中的入站；
+- 入站协议和 Tag；
+- TLS、Reality、传输参数；
+- VLESS、Trojan、Hysteria2 用户；
+- 用户凭据；
+- 用户与入站绑定关系。
+
+### 不会导入的内容
+
+当前导入功能不会把以下内容直接写入中心数据库：
+
+- sing-box 出站；
+- DNS；
+- 路由规则；
+- 证书文件本体；
+- 系统级防火墙；
+- Nginx/Caddy 配置；
+- VPS 上的其他系统服务。
+
+导入过程不会覆盖中心已有的入站。如果发现重复 Tag，会终止本次导入并回滚，避免误覆盖。
+
+### 迁移建议
+
+生产迁移前建议：
+
+```bash
+sudo cp /etc/sing-box/config.json \
+  /etc/sing-box/config.json.backup.$(date +%Y%m%d-%H%M%S)
+```
+
+迁移后先验证：
+
+```bash
+/usr/local/bin/sing-box check -c /etc/sing-box/config.json
+sudo systemctl status sing-box
+sudo systemctl status singbox-agent
+```
+
+不要在没有备份的情况下直接执行中心端批量同步。
+
+---
+
+## 十一、日常使用流程
+
+### 新增入站
+
+1. 进入“入站”；
+2. 选择协议：VLESS、Trojan 或 Hysteria2；
+3. 配置监听地址、端口、TLS、Reality 或传输；
+4. 选择目标节点；
+5. 保存并执行同步；
+6. 检查节点状态和订阅链接。
+
+### 新增用户
+
+1. 进入“客户端/用户”；
+2. 创建用户；
+3. 设置 UUID、密码、流量和到期时间；
+4. 绑定一个或多个入站；
+5. 保存；
+6. 等待节点同步；
+7. 从订阅页面获取链接或二维码。
+
+### 禁用用户
+
+禁用用户后，中心端会将用户状态同步到对应节点。建议同时检查：
+
+- 用户是否仍出现在入站配置；
+- Agent 是否正常；
+- sing-box 是否成功重启；
+- 节点日志是否有配置校验错误。
+
+### 查看流量
+
+中心面板可以查看：
+
+- 节点流量；
+- 入站流量；
+- 用户流量；
+- 在线状态；
+- 节点健康状态。
+
+裸 sing-box 节点的用户级流量依赖 `experimental.v2ray_api`，未启用时只能获得有限的节点状态和配置数据。
+
+---
+
+## 十二、Agent API 参考
+
+所有 API 都需要：
+
+```http
+Authorization: Bearer <TOKEN>
+```
+
+### 健康检查
+
+```http
+GET /v1/health
+```
+
+### 运行信息
+
+```http
+GET /v1/info
+```
+
+### 入站和用户
+
+```http
+GET /v1/inbounds
+```
+
+### 流量统计
+
+```http
+GET /v1/stats
+```
+
+### 配置校验
+
+```http
+POST /v1/config/validate
+```
+
+### 应用配置
+
+```http
+POST /v1/config/apply
+```
+
+Agent 会执行：
+
+1. 写入临时文件；
+2. 运行 `sing-box check`；
+3. 原子替换配置；
+4. 按请求重启 sing-box；
+5. 重启失败时恢复旧配置。
+
+### 重启核心
+
+```http
+POST /v1/core/restart
+```
+
+### 2S-UI 兼容接口
+
+```text
+GET  /app/apiv2/status
+GET  /app/apiv2/onlines
+GET  /app/apiv2/inbounds
+GET  /app/apiv2/clients
+POST /app/apiv2/save
+POST /app/apiv2/restartSb
+```
+
+---
+
+## 十三、常用排障命令
+
+### 中心面板
+
+```bash
+sudo systemctl status s-ui
+sudo journalctl -u s-ui -n 200 --no-pager
+```
+
+### sing-box
+
+```bash
+sudo systemctl status sing-box
+sudo journalctl -u sing-box -n 200 --no-pager
+/usr/local/bin/sing-box check -c /etc/sing-box/config.json
+```
+
+### Agent
+
+```bash
+sudo systemctl status singbox-agent
+sudo journalctl -u singbox-agent -n 200 --no-pager
+```
+
+### 测试 Agent
+
+```bash
+TOKEN=$(sudo cat /etc/singbox-agent/token)
+
+curl -i \
+  -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:2088/v1/health
+
+curl -i \
+  -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:2088/v1/inbounds
+```
+
+### 检查端口
+
+```bash
+sudo ss -lntp | grep -E '2088|10085|2095|2096'
+```
+
+常见问题：
+
+| 现象 | 检查方向 |
+|---|---|
+| 中心节点离线 | Agent 地址、Token、防火墙、WireGuard/Tailscale 路由 |
+| Agent 启动失败 | `EnvironmentFile`、Token 文件、配置路径、文件权限 |
+| 配置同步失败 | `sing-box check`、JSON 格式、协议参数、服务权限 |
+| 用户流量为 0 | `v2ray_api` 是否启用、用户是否写入 `stats.users` |
+| 订阅地址错误 | 检查 `metadata.yaml` 中的 `server` 和 `port` |
+| 重启后配置回退 | sing-box 校验失败或 systemd 服务名不正确 |
+| 导入重复失败 | 中心已有相同入站 Tag，先改名或删除冲突入站 |
+
+---
+
+## 十四、备份与升级
+
+### 中心数据库备份
+
+中心数据库位置依安装方式而定，常见为项目目录下的 `db`：
+
+```bash
+sudo systemctl stop s-ui
+sudo tar czf /root/2s-ui-backup-$(date +%Y%m%d-%H%M%S).tar.gz \
+  /usr/local/2s-ui/db \
+  /usr/local/2s-ui/cert
+sudo systemctl start s-ui
+```
+
+### 裸节点备份
+
+```bash
+sudo cp -a /etc/sing-box /root/sing-box-backup-$(date +%Y%m%d-%H%M%S)
+sudo cp -a /etc/singbox-agent /root/singbox-agent-backup-$(date +%Y%m%d-%H%M%S)
+```
+
+### 升级顺序
+
+推荐顺序：
+
+1. 备份中心数据库；
+2. 备份每台 VPS 的 sing-box 配置和 Agent 配置；
+3. 在测试环境构建新版本；
+4. 先升级中心面板；
+5. 再逐台升级 Agent；
+6. 最后执行节点同步；
+7. 检查订阅、用户登录和流量统计。
+
+不要同时停止所有节点，也不要在没有回滚备份的情况下批量升级。
+
+---
+
+## 十五、当前边界和注意事项
+
+1. Agent 不应直接暴露公网。
+2. `experimental.v2ray_api` 只建议监听 `127.0.0.1`。
+3. sing-box 配置中的监听地址不等于公网连接地址，订阅公网信息应通过 `metadata.yaml` 补充。
+4. 导入裸配置主要用于迁移入站和用户，不会自动迁移整个 VPS 的系统网络环境。
+5. 复杂的 Nginx/Caddy 反代、CDN、NAT、端口跳跃场景，需要管理员手动填写元数据并验证订阅。
+6. 修改中心面板或 Agent 前，必须先备份数据库、配置文件和 Token。
+7. 原生 2S-UI 节点与裸 sing-box + Agent 节点可以混合使用，但应明确每个节点的管理边界，避免同时由多个面板直接修改同一份 sing-box 配置。
+
+---
+
+## 十六、推荐的三 VPS 部署方案
+
+如果三台 VPS 当前都运行裸 sing-box，推荐：
+
+```text
+中心管理服务器：2S-UI
+VPS 1：裸 sing-box + singbox-agent
+VPS 2：裸 sing-box + singbox-agent
+VPS 3：裸 sing-box + singbox-agent
+```
+
+每台 VPS：
+
+1. 保留现有 sing-box 配置；
+2. 安装 Agent；
+3. 配置 Token；
+4. 配置 `metadata.yaml`；
+5. 启用用户级流量统计；
+6. 通过 WireGuard/Tailscale 接入中心；
+7. 在中心面板选择“裸 sing-box + Agent”；
+8. 使用导入功能迁移现有配置；
+9. 验证入站、用户、订阅和流量统计；
+10. 再开始日常统一管理。
+
+这样可以在不安装完整 2S-UI 的前提下，保留裸 sing-box 的轻量性，同时获得中心化的用户、节点和订阅管理能力。
